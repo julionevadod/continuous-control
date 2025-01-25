@@ -17,6 +17,9 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
+dependencies = [
+    "unityagents",
+]
 
 [project.urls]
 Homepage = "https://julionevadod.github.io/continuous-control/"
@@ -114,3 +117,5 @@ skip_empty = true
 branch = true
 source = ["src"]
 
+[tool.uv.sources]
+unityagents = { path = "python" }
