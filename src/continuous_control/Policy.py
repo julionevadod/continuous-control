@@ -2,7 +2,7 @@ from torch import nn
 
 
 class Policy(nn.Module):
-    def __init__(self, input_size, output_size, fc1_size, fc2_size):
+    def __init__(self, input_size: int, output_size: int, fc1_size: int = 64, fc2_size: int = 64):
         super().__init__()
 
         self.net = nn.Sequential(
