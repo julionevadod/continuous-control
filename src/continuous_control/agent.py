@@ -45,13 +45,8 @@ class Agent:
         loss = []
         for t in trajectories:
             r = sum(t["rewards"])
-            print(r)
             actions_log = list(map(torch.log, t["actions"]))
             loss.append(r * torch.cat(actions_log).sum())
-            print(loss)
-            print(t["actions"])
-            print(actions_log)
-            raise
         return sum(loss) / TRAJECTORIES_SAMPLE_SIZE
 
     def learn(self, iterations):
