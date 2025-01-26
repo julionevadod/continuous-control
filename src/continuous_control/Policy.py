@@ -24,8 +24,8 @@ class Policy(nn.Module):
         output = torch.zeros_like(x)
 
         for i in range(0, output.shape[1], 2):
-            output[:, i] = f.tanh(x[:, 0])
-            output[:, i + 1] = f.sigmoid(x[:, 1])
+            output[:, i] = f.tanh(x[:, i])
+            output[:, i + 1] = f.sigmoid(x[:, i + 1])
 
         return output
 

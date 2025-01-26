@@ -8,7 +8,7 @@ INPUT_SIZE = 33
 ACTION_SIZE = 4
 NUM_AGENTS = 1
 TRAJECTORIES_SAMPLE_SIZE = 8
-MAX_LEN_EPISODE = 10000
+MAX_LEN_EPISODE = 1000
 
 
 class Agent:
@@ -51,15 +51,18 @@ class Agent:
     def _compute_loss(self, trajectories):
         loss = []
         for t in trajectories:
+            loss_t = []
             r = sum(t["rewards"])
-            loss.append(-r * torch.cat(t["log_proba"]).sum())
-        return torch.hstack(loss) / TRAJECTORIES_SAMPLE_SIZE
+            for t2 in t["log_proba"]:
+                loss_t.append(-r * t2)
+            loss.append(torch.cat(loss_t).sum())
+        return (torch.hstack(loss) / TRAJECTORIES_SAMPLE_SIZE).sum()
 
     def learn(self, iterations):
         for i in range(iterations):
             trajectories = self._sample_trajectories()
             avg_reward = sum([sum(t["rewards"]) for t in trajectories]) / TRAJECTORIES_SAMPLE_SIZE
-            loss = self._compute_loss(trajectories).sum()
+            loss = self._compute_loss(trajectories)
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
