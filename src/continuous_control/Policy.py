@@ -1,5 +1,7 @@
+import numpy as np
 import torch
 from torch import nn
+from torch.nn import functional as f
 
 
 class Policy(nn.Module):
@@ -17,11 +19,24 @@ class Policy(nn.Module):
         )
 
     def forward(self, state):
-        return self.net(state)
+        x = self.net(state)
+
+        output = torch.zeros_like(x)
+
+        for i in range(0, output.shape[1], 2):
+            output[:, i] = f.tanh(x[:, 0])
+            output[:, i + 1] = f.sigmoid(x[:, 1])
+
+        return output
+
+    def get_log_proba(self, action, mean, std):
+        log_proba = -((action - mean) ** 2) / (2 * (std**2)) - torch.log(np.sqrt(2 * torch.pi) * std)
+        return log_proba
 
     def act(self, state):
         output = self.forward(state).squeeze()
-        means = output[torch.arange(0, self.output_size, 2)].clip(-1, 1)
-        stds = output[torch.arange(1, self.output_size, 2)].clip(0)
+        means = output[torch.arange(0, self.output_size, 2)]  # .clip(min=-1, max=1)
+        stds = output[torch.arange(1, self.output_size, 2)]  # .clip(min=0)
         action = torch.normal(means, stds)
-        return action
+        log_proba = self.get_log_proba(action, means, stds)
+        return action, log_proba

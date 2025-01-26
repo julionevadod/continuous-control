@@ -12,7 +12,7 @@ MAX_LEN_EPISODE = 10000
 
 
 class Agent:
-    def __init__(self, lr=5e-4):
+    def __init__(self, lr=1e-2):
         self.env = UnityEnvironment(file_name="../env/Reacher.app")
         self.policy = Policy(INPUT_SIZE, 2 * ACTION_SIZE)
         self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=lr)
@@ -22,14 +22,16 @@ class Agent:
         for _ in range(TRAJECTORIES_SAMPLE_SIZE):
             states_sample = []
             actions_sample = []
+            log_proba_sample = []
             scores = []
             brain_name = self.env.brain_names[0]
             env_info = self.env.reset(train_mode=True)[brain_name]
             states = torch.Tensor(env_info.vector_observations)
             states_sample.append(states)
             for _ in range(MAX_LEN_EPISODE):
-                actions = self.policy.act(states)
+                actions, log_proba = self.policy.act(states)
                 actions_sample.append(actions)
+                log_proba_sample.append(log_proba)
                 env_info = self.env.step(actions.detach().numpy())[brain_name]
                 next_states = torch.Tensor(env_info.vector_observations)
                 dones = env_info.local_done
@@ -38,16 +40,20 @@ class Agent:
                 states_sample.append(states)
                 if np.any(dones):
                     break
-            trajectories.append({"states": states_sample, "actions": actions_sample, "rewards": scores})
+            trajectories.append({
+                "states": states_sample,
+                "log_proba": log_proba_sample,
+                "actions": actions_sample,
+                "rewards": scores,
+            })
         return trajectories
 
     def _compute_loss(self, trajectories):
         loss = []
         for t in trajectories:
             r = sum(t["rewards"])
-            actions_log = list(map(torch.log, t["actions"]))
-            loss.append(r * torch.cat(actions_log).sum())
-        return sum(loss) / TRAJECTORIES_SAMPLE_SIZE
+            loss.append(-r * torch.cat(t["log_proba"]).sum())
+        return torch.hstack(loss) / TRAJECTORIES_SAMPLE_SIZE
 
     def learn(self, iterations):
         for i in range(iterations):
@@ -57,9 +63,9 @@ class Agent:
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
-            print(f"\rIteration {i}/{iterations}: Average reward -> {avg_reward:2f}, Loss -> {loss:2f}", end="")
+            print(f"\rIteration {i}/{iterations}: Average reward -> {avg_reward:2f}, Loss -> {-loss:2f}", end="")
             if i % 100 == 0:
-                print(f"\rIteration {i}/{iterations}: Average reward -> {avg_reward:2f}, Loss -> {loss:2f}")
+                print(f"\rIteration {i}/{iterations}: Average reward -> {avg_reward:2f}, Loss -> {-loss:2f}")
 
     def play(self):
         brain_name = self.env.brain_names[0]
