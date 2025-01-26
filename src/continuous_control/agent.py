@@ -19,7 +19,7 @@ class Agent:
 
     def play(self):
         brain_name = self.env.brain_names[0]
-        env_info = self.env.reset(train_mode=True)[brain_name]
+        env_info = self.env.reset(train_mode=False)[brain_name]
 
         states = env_info.vector_observations
         scores = np.zeros(NUM_AGENTS)
