@@ -7,7 +7,7 @@ from .policy import Policy
 INPUT_SIZE = 33
 ACTION_SIZE = 4
 NUM_AGENTS = 1
-TRAJECTORIES_SAMPLE_SIZE = 8
+TRAJECTORIES_SAMPLE_SIZE = 16
 MAX_LEN_EPISODE = 1000
 
 
@@ -16,6 +16,7 @@ class Agent:
         self.env = UnityEnvironment(file_name="../env/Reacher.app")
         self.policy = Policy(INPUT_SIZE, 2 * ACTION_SIZE)
         self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=lr)
+        self.gamma = 0.95  # Discounts are needed because otherwise gradients explode due to huge losses
 
     def _sample_trajectories(self):
         trajectories = []
@@ -52,7 +53,8 @@ class Agent:
         loss = []
         for t in trajectories:
             loss_t = []
-            r = sum(t["rewards"])
+            discounts = torch.tensor(np.array([self.gamma**i for i in range(len(t["rewards"]))]))
+            r = (torch.tensor(np.array(t["rewards"])) * discounts).sum().item()
             for t2 in t["log_proba"]:
                 loss_t.append(-r * t2)
             loss.append(torch.cat(loss_t).sum())

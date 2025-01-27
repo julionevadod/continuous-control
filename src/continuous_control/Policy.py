@@ -25,13 +25,13 @@ class Policy(nn.Module):
 
         for i in range(0, output.shape[1], 2):
             output[:, i] = f.tanh(x[:, i])
-            output[:, i + 1] = f.sigmoid(x[:, i + 1])
+            output[:, i + 1] = f.sigmoid(x[:, i + 1])  # let's try to use relu
 
         return output
 
     def get_log_proba(self, action, mean, std):
         log_proba = -((action - mean) ** 2) / (2 * (std**2)) - torch.log(np.sqrt(2 * torch.pi) * std)
-        return log_proba
+        return log_proba  # Cannot use nan to num because it is not differentiable
 
     def act(self, state):
         output = self.forward(state).squeeze()
