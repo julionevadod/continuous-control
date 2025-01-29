@@ -7,7 +7,7 @@ from .policy import Policy
 INPUT_SIZE = 33
 ACTION_SIZE = 4
 NUM_AGENTS = 1
-TRAJECTORIES_SAMPLE_SIZE = 16
+TRAJECTORIES_SAMPLE_SIZE = 8
 MAX_LEN_EPISODE = 1000
 
 
@@ -51,6 +51,7 @@ class Agent:
 
     def _compute_loss(self, trajectories):
         loss = []
+        reward = 0
         for t in trajectories:
             loss_t = []
             discounts = torch.tensor(np.array([self.gamma**i for i in range(len(t["rewards"]))]))
@@ -58,19 +59,19 @@ class Agent:
             for t2 in t["log_proba"]:
                 loss_t.append(-r * t2)
             loss.append(torch.cat(loss_t).sum())
-        return (torch.hstack(loss) / TRAJECTORIES_SAMPLE_SIZE).sum()
+            reward += r
+        return (torch.hstack(loss) / TRAJECTORIES_SAMPLE_SIZE).sum(), reward
 
     def learn(self, iterations):
         for i in range(iterations):
             trajectories = self._sample_trajectories()
-            avg_reward = sum([sum(t["rewards"]) for t in trajectories]) / TRAJECTORIES_SAMPLE_SIZE
-            loss = self._compute_loss(trajectories)
+            loss, avg_reward = self._compute_loss(trajectories)
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
-            print(f"\rIteration {i}/{iterations}: Average reward -> {avg_reward:2f}, Loss -> {-loss:2f}", end="")
+            print(f"\rIteration {i}/{iterations}: Average reward -> {avg_reward:2f}, Loss -> {loss:2f}", end="")
             if i % 100 == 0:
-                print(f"\rIteration {i}/{iterations}: Average reward -> {avg_reward:2f}, Loss -> {-loss:2f}")
+                print(f"\rIteration {i}/{iterations}: Average reward -> {avg_reward:2f}, Loss -> {loss:2f}")
 
     def play(self):
         brain_name = self.env.brain_names[0]

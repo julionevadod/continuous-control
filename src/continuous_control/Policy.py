@@ -5,7 +5,7 @@ from torch.nn import functional as f
 
 
 class Policy(nn.Module):
-    def __init__(self, input_size: int, output_size: int, fc1_size: int = 64, fc2_size: int = 64):
+    def __init__(self, input_size: int, output_size: int, fc1_size: int = 8, fc2_size: int = 9):
         super().__init__()
 
         self.output_size = output_size
@@ -37,6 +37,9 @@ class Policy(nn.Module):
         output = self.forward(state).squeeze()
         means = output[torch.arange(0, self.output_size, 2)]  # .clip(min=-1, max=1)
         stds = output[torch.arange(1, self.output_size, 2)]  # .clip(min=0)
-        action = torch.normal(means, stds)
-        log_proba = self.get_log_proba(action, means, stds)
+        m = torch.distributions.Normal(means, stds)
+        action = m.sample()
+        log_proba = m.log_prob(action)
+        # action = torch.normal(means, stds)
+        # log_proba = self.get_log_proba(action, means, stds) #log proba results is the same as sampling from torch.distributions
         return action, log_proba
