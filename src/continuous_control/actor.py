@@ -1,10 +1,8 @@
-import numpy as np
 import torch
 from torch import nn
-from torch.nn import functional as f
 
 
-class Policy(nn.Module):
+class Actor(nn.Module):
     def __init__(self, input_size: int, output_size: int, fc1_size: int = 8, fc2_size: int = 9):
         super().__init__()
 
@@ -16,22 +14,11 @@ class Policy(nn.Module):
             nn.Linear(fc1_size, fc2_size),
             nn.ReLU(),
             nn.Linear(fc2_size, output_size),
+            nn.Tanh(),
         )
 
     def forward(self, state):
-        x = self.net(state)
-
-        output = torch.zeros_like(x)
-
-        for i in range(0, output.shape[1], 2):
-            output[:, i] = f.tanh(x[:, i])
-            output[:, i + 1] = f.sigmoid(x[:, i + 1])  # let's try to use relu
-
-        return output
-
-    def get_log_proba(self, action, mean, std):
-        log_proba = -((action - mean) ** 2) / (2 * (std**2)) - torch.log(np.sqrt(2 * torch.pi) * std)
-        return log_proba  # Cannot use nan to num because it is not differentiable
+        return self.net(state)
 
     def act(self, state):
         output = self.forward(state).squeeze()
