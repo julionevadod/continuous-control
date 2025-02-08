@@ -1,36 +1,44 @@
 import collections
+import copy
 
 import numpy as np
 import torch
 from unityagents import UnityEnvironment
 
 from .actor import Actor
+from .critic import Critic
+from .OUNoise import OUNoise
 from .replay_buffer import ExperienceReplayBuffer
 
 INPUT_SIZE = 33
 ACTION_SIZE = 4
 NUM_AGENTS = 1
-TRAJECTORIES_SAMPLE_SIZE = 8
 MAX_LEN_EPISODE = 1000
-UPDATE_EVERY = 4
+UPDATE_EVERY = 2
 WINDOW_SIZE = 100
 BUFFER_SIZE = 100000
+TAU = 1e-3
 
-device = "cpu"
+device = "cpu"  # "mps" if torch.backends.mps.is_available() else "cpu"
 
 
 class Agent:
-    def __init__(self, lr=1e-2, gamma=0.95):
+    def __init__(self, lr_actor=1e-4, lr_critic=1e-3, gamma=0.99):
         self.env = UnityEnvironment(file_name="../env/Reacher.app")
-        self.actor_local = Actor(INPUT_SIZE, ACTION_SIZE).eval()
-        self.actor_target = Actor(INPUT_SIZE, ACTION_SIZE).eval()
-        self.critic_local = Actor(INPUT_SIZE, ACTION_SIZE).eval()
-        self.critic_target = Actor(INPUT_SIZE, ACTION_SIZE).eval()
+        self.actor_local = Actor(INPUT_SIZE, ACTION_SIZE).to(device).eval()
+        self.actor_target = copy.deepcopy(self.actor_local).to(device).eval()
+        self.critic_local = Critic(INPUT_SIZE, ACTION_SIZE, 1).to(device).eval()  # 1 since we output reward directly
+        self.critic_target = copy.deepcopy(self.critic_local).to(device).eval()
         self.loss = torch.nn.functional.mse_loss
         self.replay_buffer = ExperienceReplayBuffer(BUFFER_SIZE)
-        self.optimizer_actor = torch.optim.Adam(self.actor_local.parameters(), lr=lr)
-        self.optimizer_critic = torch.optim.Adam(self.critic_local.parameters(), lr=lr)
-        self.gamma = gamma  # Discounts are needed because otherwise gradients explode due to huge losses
+        self.optimizer_actor = torch.optim.Adam(self.actor_local.parameters(), lr=lr_actor)
+        self.optimizer_critic = torch.optim.Adam(self.critic_local.parameters(), lr=lr_critic)
+        self.gamma = gamma
+        self.noise = OUNoise(ACTION_SIZE, 0)
+
+    def _soft_update(self, source_network, target_network):
+        for source_param, target_param in zip(source_network.parameters(), target_network.parameters()):
+            target_param.data.copy_(TAU * source_param.data + (1 - TAU) * target_param.data)
 
     def _update(self, experiences: list[tuple[list[float], int, list[float], float, int]]):
         """Update policy from a batch of experiences
@@ -43,35 +51,50 @@ class Agent:
 
         # Split experiences
         states, actions, next_states, rewards, dones = zip(*experiences)
-        states = torch.tensor(np.array(states), dtype=torch.float64).to(device)
-        actions = torch.tensor(np.array(actions), dtype=torch.int64).to(device).unsqueeze(1)
-        next_states = torch.tensor(np.array(next_states), dtype=torch.float64).to(device)
-        rewards = torch.tensor(np.array(rewards), dtype=torch.float64).to(device).unsqueeze(1)
+
+        states = torch.tensor(np.array(states), dtype=torch.float32).to(device)
+        actions = torch.tensor(np.array(actions), dtype=torch.float32).to(device)
+        next_states = torch.tensor(np.array(next_states), dtype=torch.float32).to(device)
+        rewards = torch.tensor(np.array(rewards), dtype=torch.float32).to(device).unsqueeze(1)
         dones = torch.tensor(np.array(dones), dtype=torch.int64).to(device).unsqueeze(1)
 
-        # Local network pass
-        local_network_output = self.critic_local(states)
-        local_expected_reward = local_network_output.gather(1, actions)
-
-        # Target network pass
+        ########################################################################
+        # Update Critic
+        ########################################################################
+        # Compute critic target value
         with torch.no_grad():
-            target_network_output = self.critic_target(next_states)
-
-        target_expected_reward = rewards + self.gamma * target_network_output.detach().max(dim=1).values.unsqueeze(
-            1
-        ) * (1 - dones)
-
+            actor_target_actions = self.actor_target(next_states)
+            critic_target_output = self.critic_target(next_states, actor_target_actions)
+        critic_target_reward = rewards + self.gamma * critic_target_output.detach() * (1 - dones)
+        # Compute critic local value
+        critic_local_reward = self.critic_local(states, actions)
         # Compute loss
-        loss = self.loss(local_expected_reward, target_expected_reward)
+        loss_critic = self.loss(critic_local_reward, critic_target_reward)
+        # Backpropagation
+        self.optimizer_critic.zero_grad()
+        loss_critic.backward()
+        self.optimizer_critic.step()
 
-        # Update
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
-        self._soft_update(self.local_network, self.target_network, 1e-3)
-        # self.target_network = copy.deepcopy(self.local_network)
-        self.eps = max(self.eps * self.eps_decay, self.eps_end)
-        self.critic_local.eval()
+        ########################################################################
+        # Update Actor
+        ########################################################################
+        actor_local_actions = self.actor_local(states)
+        critic_local_reward = self.critic_local(states, actor_local_actions)
+        loss_actor = -critic_local_reward.mean()  # error I had sum instead of mean
+        # Backpropagation
+        self.optimizer_actor.zero_grad()
+        loss_actor.backward()
+        self.optimizer_actor.step()
+
+        ########################################################################
+        # Update Target Networks
+        ########################################################################
+        self._soft_update(self.critic_local, self.critic_target)
+        self.critic_local.eval()  # TODO do we want gradients from actor to backpropagate to critic?
+        self._soft_update(self.actor_local, self.actor_target)
+        self.critic_target.eval()
+
+        # self.eps = max(self.eps * self.eps_decay, self.eps_end)
 
     def learn(self, n_iterations: int, batch_size: int = 4) -> list[float]:
         """Make agent learn how to interact with its given environment
@@ -91,7 +114,11 @@ class Agent:
             state = env_info.vector_observations[0]
             score = 0
             for j in range(MAX_LEN_EPISODE):
-                action = self.actor_target(state).detach().cpu().numpy()
+                with torch.no_grad():
+                    action = (
+                        self.actor_local(torch.tensor(state, dtype=torch.float32).to(device)).detach().cpu().numpy()
+                        + self.noise.sample()
+                    )
                 env_info = self.env.step(action)[brain_name]
                 next_state = env_info.vector_observations[0]
                 reward = env_info.rewards[0]
