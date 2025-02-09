@@ -14,4 +14,4 @@ class Critic(nn.Module):
     def forward(self, state, actions):
         fc1_output = f.relu(self.fc1(state))
         fc2_output = f.relu(self.fc2(torch.cat([fc1_output, actions], dim=1)))
-        return self.output(fc2_output)
+        return f.relu(self.output(fc2_output))

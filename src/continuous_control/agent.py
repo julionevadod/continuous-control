@@ -13,17 +13,17 @@ from .replay_buffer import ExperienceReplayBuffer
 INPUT_SIZE = 33
 ACTION_SIZE = 4
 NUM_AGENTS = 1
-MAX_LEN_EPISODE = 1000
-UPDATE_EVERY = 2
+MAX_LEN_EPISODE = 300
+UPDATE_EVERY = 4
 WINDOW_SIZE = 100
-BUFFER_SIZE = 100000
+BUFFER_SIZE = 10000
 TAU = 1e-3
 
 device = "cpu"  # "mps" if torch.backends.mps.is_available() else "cpu"
 
 
 class Agent:
-    def __init__(self, lr_actor=1e-4, lr_critic=1e-3, gamma=0.99):
+    def __init__(self, lr_actor=1e-4, lr_critic=1e-4, gamma=0.99):
         self.env = UnityEnvironment(file_name="../env/Reacher.app")
         self.actor_local = Actor(INPUT_SIZE, ACTION_SIZE).to(device).eval()
         self.actor_target = copy.deepcopy(self.actor_local).to(device).eval()
@@ -94,6 +94,8 @@ class Agent:
         self._soft_update(self.actor_local, self.actor_target)
         self.critic_target.eval()
 
+        # print("Critic:", loss_critic.item(), "Actor:", loss_actor.item())
+
         # self.eps = max(self.eps * self.eps_decay, self.eps_end)
 
     def learn(self, n_iterations: int, batch_size: int = 4) -> list[float]:
@@ -119,12 +121,19 @@ class Agent:
                         self.actor_local(torch.tensor(state, dtype=torch.float32).to(device)).detach().cpu().numpy()
                         + self.noise.sample()
                     )
+                action = np.clip(action, -1, 1)
                 env_info = self.env.step(action)[brain_name]
                 next_state = env_info.vector_observations[0]
                 reward = env_info.rewards[0]
                 done = env_info.local_done[0]
                 score += reward
-                self.replay_buffer.insert([state, action, next_state, reward, done])
+                # This is like balancing learning
+                if reward > 0:
+                    self.replay_buffer.insert([state, action, next_state, reward, done])
+                else:
+                    if np.random.rand() < 0.00:
+                        self.replay_buffer.insert([state, action, next_state, reward, done])
+                # self.replay_buffer.insert([state, action, next_state, reward, done])
                 if (j % UPDATE_EVERY == 0) & (len(self.replay_buffer) >= batch_size):
                     experiences = self.replay_buffer.sample(batch_size)
                     self._update(experiences)
@@ -137,10 +146,11 @@ class Agent:
                 f"\rITERATION {i}/{n_iterations}: Average Reward Last 100: {float(np.mean(scores_window)):.2f} \t Last Episode: {score:.2f}",
                 end="",
             )
-            if i % 100 == 0:
+            if (i % 100 == 0) & (i != 0):
                 print(
                     f"\rITERATION {i}/{n_iterations}: Average Reward Last 100: {float(np.mean(scores_window)):.2f} \t Last Episode: {score:.2f}"
                 )
+            # self.noise.reset()
         return scores
 
     def play(self):
