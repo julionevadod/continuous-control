@@ -19,11 +19,11 @@ WINDOW_SIZE = 100
 BUFFER_SIZE = 100000
 TAU = 1e-3
 
-device = "cpu"  # "mps" if torch.backends.mps.is_available() else "cpu"
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 class Agent:
-    def __init__(self, lr_actor=1e-3, lr_critic=1e-3, gamma=0.995):
+    def __init__(self, gamma, lr_actor, lr_critic, save_path):
         torch.manual_seed(0)
         self.env = UnityEnvironment(file_name="../env/Reacher.app")
         self.actor_local = Actor(INPUT_SIZE, ACTION_SIZE).to(device).eval()
@@ -36,6 +36,7 @@ class Agent:
         self.optimizer_critic = torch.optim.Adam(self.critic_local.parameters(), lr=lr_critic)
         self.gamma = gamma
         self.noise = OUNoise(ACTION_SIZE, 0)
+        self.save_path = save_path
 
     def _soft_update(self, source_network, target_network):
         for source_param, target_param in zip(source_network.parameters(), target_network.parameters()):
@@ -95,9 +96,22 @@ class Agent:
         self._soft_update(self.actor_local, self.actor_target)
         self.actor_local.eval()
 
-        # print("Critic:", loss_critic.item(), "Actor:", loss_actor.item())
+    def save(self):
+        """Save local, target and optimizers"""
+        torch.save(self.actor_local.state_dict(), f"{self.save_path}/actor_local_network")
+        torch.save(self.actor_target.state_dict(), f"{self.save_path}/actor_target_network")
+        torch.save(self.critic_local.state_dict(), f"{self.save_path}/critic_local_network")
+        torch.save(self.critic_target.state_dict(), f"{self.save_path}/critic_target_network")
+        torch.save(self.optimizer_actor.state_dict(), f"{self.save_path}/actor_local_optimizer")
+        torch.save(self.optimizer_critic.state_dict(), f"{self.save_path}/critic_local_optimizer")
 
-        # self.eps = max(self.eps * self.eps_decay, self.eps_end)
+    def load(self):
+        self.actor_local.load_state_dict(torch.load(f"{self.save_path}/actor_local_network", weights_only=True))
+        self.actor_target.load_state_dict(torch.load(f"{self.save_path}/actor_target_network", weights_only=True))
+        self.optimizer_actor.load_state_dict(torch.load(f"{self.save_path}/actor_local_optimizer", weights_only=True))
+        self.critic_local.load_state_dict(torch.load(f"{self.save_path}/critic_local_network", weights_only=True))
+        self.critic_target.load_state_dict(torch.load(f"{self.save_path}/critic_target_network", weights_only=True))
+        self.optimizer_critic.load_state_dict(torch.load(f"{self.save_path}/critic_local_optimizer", weights_only=True))
 
     def learn(self, n_iterations: int, batch_size: int = 4) -> list[float]:
         """Make agent learn how to interact with its given environment
@@ -119,7 +133,7 @@ class Agent:
             for j in range(MAX_LEN_EPISODE):
                 with torch.no_grad():
                     action = (
-                        self.actor_local(torch.tensor(state, dtype=torch.float32).to(device).unsqueeze(0)).cpu().numpy()
+                        self.actor_local(torch.tensor(state, dtype=torch.float32).to(device)).cpu().numpy()
                         + self.noise.sample()
                     )
                 action = np.clip(action, -1, 1)
@@ -141,6 +155,11 @@ class Agent:
                 f"\rITERATION {i}/{n_iterations}: Average Reward Last 100: {float(np.mean(scores_window)):.2f} \t Last Episode: {score:.2f}",
                 end="",
             )
+
+            if float(np.mean(scores_window) > 30):
+                print(f"\nEnvironment solved in {i} iterations with a score of {float(np.mean(scores_window)):.2f}")
+                self.save()
+                break
             if (i % 100 == 0) & (i != 0):
                 print(
                     f"\rITERATION {i}/{n_iterations}: Average Reward Last 100: {float(np.mean(scores_window)):.2f} \t Last Episode: {score:.2f}"
