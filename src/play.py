@@ -1,7 +1,7 @@
 import argparse
 import configparser
 
-from continuous_control.src.agent import Agent
+from continuous_control.agent import Agent
 
 if __name__ == "__main__":
     config = configparser.ConfigParser()

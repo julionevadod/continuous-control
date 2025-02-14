@@ -3,6 +3,7 @@ import copy
 
 import numpy as np
 import torch
+from torch import nn
 from unityagents import UnityEnvironment
 
 from .actor import Actor
@@ -23,7 +24,18 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 class Agent:
-    def __init__(self, gamma, lr_actor, lr_critic, save_path):
+    def __init__(self, gamma: float, lr_actor: float, lr_critic: float, save_path: str):
+        """Initialize an Agent for the Reacher environment
+
+        :param gamma: Discount rate for future rewards
+        :type gamma: float
+        :param lr_actor: Learning rate for the Actor
+        :type lr_actor: float
+        :param lr_critic: Learning rate for the Critic
+        :type lr_critic: float
+        :param save_path: Path to save & load network and optimizer state dicts
+        :type save_path: str
+        """
         torch.manual_seed(0)
         self.env = UnityEnvironment(file_name="../env/Reacher.app")
         self.actor_local = Actor(INPUT_SIZE, ACTION_SIZE).to(device).eval()
@@ -38,14 +50,22 @@ class Agent:
         self.noise = OUNoise(ACTION_SIZE, 0)
         self.save_path = save_path
 
-    def _soft_update(self, source_network, target_network):
+    def _soft_update(self, source_network: nn.Module, target_network: nn.Module):
+        """Soft update from source to target nework. Parameter mix is
+        defined by TAU constant
+
+        :param source_network: network from which wegiths are copied
+        :type source_network: nn.Module
+        :param target_network: network to which weigths are copied
+        :type target_network: nn.Module
+        """
         for source_param, target_param in zip(source_network.parameters(), target_network.parameters()):
             target_param.data.copy_(TAU * source_param.data + (1 - TAU) * target_param.data)
 
     def _update(self, experiences: list[tuple[list[float], int, list[float], float, int]]):
         """Update policy from a batch of experiences
 
-        :param experiences: Experiences sampled from buffer used to update local network
+        :param experiences: Experiences sampled from buffer used to update local networks
         :type experiences: list[tuple[list[float],int,list[float],float,int]]
         """
         self.actor_local.train()
@@ -106,6 +126,7 @@ class Agent:
         torch.save(self.optimizer_critic.state_dict(), f"{self.save_path}/critic_local_optimizer")
 
     def load(self):
+        """Load local, target and optimizers"""
         self.actor_local.load_state_dict(torch.load(f"{self.save_path}/actor_local_network", weights_only=True))
         self.actor_target.load_state_dict(torch.load(f"{self.save_path}/actor_target_network", weights_only=True))
         self.optimizer_actor.load_state_dict(torch.load(f"{self.save_path}/actor_local_optimizer", weights_only=True))
@@ -168,14 +189,15 @@ class Agent:
         return scores
 
     def play(self):
+        """Play an episode in the Reacher environment with current Agent weights"""
         brain_name = self.env.brain_names[0]
         env_info = self.env.reset(train_mode=False)[brain_name]
         states = env_info.vector_observations
         scores = np.zeros(NUM_AGENTS)
         while True:
             with torch.no_grad():
-                actions = self.policy(torch.Tensor(states))
-            actions = np.clip(actions.detach().numpy(), -1, 1)
+                action = self.actor_local(torch.tensor(states, dtype=torch.float32).to(device)).cpu().numpy()
+            actions = np.clip(action, -1, 1)
             env_info = self.env.step(actions)[brain_name]
             next_states = env_info.vector_observations
             dones = env_info.local_done
