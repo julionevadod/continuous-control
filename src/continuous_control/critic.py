@@ -20,7 +20,6 @@ class Critic(nn.Module):
         """
         super().__init__()
 
-        self.bn0 = nn.BatchNorm1d(input_size)
         self.fc1 = nn.Linear(input_size, fc1, dtype=torch.float32)
         self.fc2 = nn.Linear(fc1 + action_size, fc2, dtype=torch.float32)
         self.output = nn.Linear(fc2, output_size, dtype=torch.float32)

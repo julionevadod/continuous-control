@@ -19,11 +19,8 @@ class Actor(nn.Module):
         super().__init__()
 
         self.output_size = output_size
-        self.bn0 = nn.BatchNorm1d(input_size)
         self.fc1 = nn.Linear(input_size, fc1_size, dtype=torch.float32)
-        self.bn1 = nn.BatchNorm1d(fc1_size)
         self.fc2 = nn.Linear(fc1_size, fc2_size, dtype=torch.float32)
-        self.bn2 = nn.BatchNorm1d(fc2_size)
         self.fc3 = nn.Linear(fc2_size, output_size, dtype=torch.float32)
 
     def forward(self, state):
