@@ -1,5 +1,4 @@
-# banana-collector-rl
-
+# continuous-control
 Current projects trains a Actor-Critic architecture to solve Reacher unity environment.
 
 ## Project Details
